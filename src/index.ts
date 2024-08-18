@@ -10,18 +10,7 @@ const app = new Hono();
 app.use(cors())
 app.post('/',async(c)=>{
   try{
-const {VECTOR_URL,VECTOR_TOKEN} = env<{
-  VECTOR_URL:string,
-  VECTOR_TOKEN:string
-}>(c);
-    const index = new Index({
-   
-    cache: false,
-    url: VECTOR_URL,
-    token: VECTOR_TOKEN,
-  
-  });
-    if(c.req.header('Content-Type')!=="application/json"){
+if(c.req.header('Content-Type')!=="application/json"){
       return c.json({error:"It is not in JSON format"},{status:406})
     }
     const start =  performance.now()
