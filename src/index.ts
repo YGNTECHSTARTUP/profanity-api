@@ -1,16 +1,59 @@
 
 import { Index } from "@upstash/vector";
 import { Hono } from "hono";
-import { env } from "hono/adapter";
 import { cors } from "hono/cors";
 import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
-
-
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis/cloudflare";
+declare module "hono"{
+  interface ContextVariableMap{
+    ratelimit:Ratelimit
+  }
+}
 const app = new Hono();
+const cache = new Map();
+
+class RedisRatelimit {
+ static instance:Ratelimit
+ static getInstance(){
+  if(!this.instance){
+    const redis = new Redis({
+      url:"https://tops-goat-36832.upstash.io",
+      token:"AY_gAAIncDE4ODQxYTI1ZTY5ZmE0Mjk3OWU5MDE5MzQ1NTJmODg2NXAxMzY4MzI"
+    })
+    this.instance = new Ratelimit({
+      redis:redis,
+      limiter:Ratelimit.slidingWindow(100,'1h'),
+      ephemeralCache:cache
+    })
+    
+  }
+  return this.instance
+ }  
+}
+app.use(async(c,next)=>{
+  const ratelimit = RedisRatelimit.getInstance()
+  c.set("ratelimit",ratelimit)
+  await next()
+})
 app.use(cors())
 app.post('/',async(c)=>{
   try{
-if(c.req.header('Content-Type')!=="application/json"){
+    const ratelimit = c.get("ratelimit")
+    const ip = c.req.raw.headers.get("cf-connecting-ip")
+    const {success} = await ratelimit.limit(ip ?? "anonymous")
+    if(!success){
+      return c.json({error:"Rate Limit Exceeded"},{status:429})
+    }
+    const index = new Index({
+   
+    cache: false,
+    url: "https://accurate-anchovy-84525-eu1-vector.upstash.io",
+    token: "ABoFMGFjY3VyYXRlLWFuY2hvdnktODQ1MjUtZXUxYWRtaW5aV0ZrT0dRek56TXRPV0kwTkMwMFlUUmpMVGhtTldFdFlXWXhNRFF4T1dSak5UZG0=",
+  
+  });
+
+    if(c.req.header('Content-Type')!=="application/json"){
       return c.json({error:"It is not in JSON format"},{status:406})
     }
     const start =  performance.now()
@@ -60,15 +103,14 @@ if(c.req.header('Content-Type')!=="application/json"){
       return c.json({
         isProfane:true,
         word:profane,
-        performance:start-end
+        performance:-(start-end)
       })
     }
     else{
-      const profane = vectorRes.sort((a,b)=>a.score > b.score ? -1 : 1)[0]
+      
       return c.json({
         isProfane:false,
-        word:profane,
-        performance:end-start
+        performance:-(start-end)
       })
     }
   }
